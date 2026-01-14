@@ -4,13 +4,13 @@
  */
 
 import { getContext } from '../../../../../../extensions.js';
-import { generateRaw, chat, saveChatDebounced, characters, this_chid, user_avatar, chat_metadata } from '../../../../../../../script.js';
+import { generateQuietPrompt, chat, saveChatDebounced, characters, this_chid, user_avatar, chat_metadata } from '../../../../../../../script.js';
 import { selected_group, getGroupMembers, groups } from '../../../../../../group-chats.js';
 import { extensionSettings, committedTrackerData, lastGeneratedData, FALLBACK_AVATAR_DATA_URI } from '../../core/state.js';
 import { saveSettings, saveChatData, loadChatData } from '../../core/persistence.js';
 import { i18n } from '../../core/i18n.js';
 import { getSafeThumbnailUrl } from '../../utils/avatars.js';
-import { buildRegionalMapPrompt, buildLocationMapPrompt, buildFurniturePrompt, parseMapJSON } from '../generation/mapPrompts.js';
+import { buildMapQuietPrompt, buildFurnitureQuietPrompt, parseMapJSON, parseFurnitureJSON, solveRoomLayout } from '../generation/mapPrompts.js';
 
 /**
  * Map data structure stored per chat
@@ -774,18 +774,13 @@ export class MapModal {
         try {
             const extraInstructions = this.modal.querySelector('#rpg-map-instructions').value.trim();
 
-            // Build message array based on map type (includes character cards, world info, persona)
-            let messages;
-            if (map.type === 'regional') {
-                messages = await buildRegionalMapPrompt(map.name, map.description, extraInstructions);
-            } else {
-                messages = await buildLocationMapPrompt(map.name, map.description, extraInstructions);
-            }
+            // Build quiet prompt for map generation (uses full context template)
+            const quietPrompt = buildMapQuietPrompt(map.name, map.description, extraInstructions, map.type);
 
-            // Generate via LLM with proper context
-            const response = await generateRaw({
-                prompt: messages,
-                quietToLoud: false
+            // Generate via LLM with full context template support
+            const response = await generateQuietPrompt({
+                quietPrompt: quietPrompt,
+                skipWIAN: false
             });
 
             if (!response) {
@@ -793,18 +788,21 @@ export class MapModal {
                 return;
             }
 
-            // Parse the response
-            const mapData = parseMapJSON(response);
+            // Parse the simplified response (just room names, sizes, exits, furniture names)
+            const parsedData = parseMapJSON(response);
 
-            if (!mapData || !mapData.rooms) {
+            if (!parsedData || !parsedData.rooms) {
                 toastr.error('Invalid map data returned. Try regenerating.');
                 console.error('[RPG Companion] Invalid map response:', response);
                 return;
             }
 
-            // Update the map
-            map.layout = mapData.layout || { gridSize: { rows: 5, cols: 5 }, corridors: [] };
-            map.rooms = mapData.rooms;
+            // Use the layout solver to position rooms programmatically
+            const layoutData = solveRoomLayout(parsedData.rooms);
+
+            // Update the map with solved layout
+            map.layout = layoutData.layout;
+            map.rooms = layoutData.rooms;
             map.updatedAt = new Date().toISOString();
 
             // Save and refresh
@@ -846,13 +844,13 @@ export class MapModal {
         btn.disabled = true;
 
         try {
-            // Build message array (includes world info for setting context)
-            const messages = await buildFurniturePrompt(room.name, room.roomType, room.description);
+            // Build quiet prompt for furniture generation
+            const quietPrompt = buildFurnitureQuietPrompt(room.name);
 
-            // Generate via LLM with proper context
-            const response = await generateRaw({
-                prompt: messages,
-                quietToLoud: false
+            // Generate via LLM with full context template support
+            const response = await generateQuietPrompt({
+                quietPrompt: quietPrompt,
+                skipWIAN: false
             });
 
             if (!response) {
@@ -860,11 +858,11 @@ export class MapModal {
                 return;
             }
 
-            // Parse furniture from response
-            const furnitureData = parseMapJSON(response);
+            // Parse furniture from response (just names now)
+            const furnitureArray = parseFurnitureJSON(response);
 
-            if (furnitureData?.furniture) {
-                room.furniture = furnitureData.furniture;
+            if (furnitureArray && furnitureArray.length > 0) {
+                room.furniture = furnitureArray;
                 map.updatedAt = new Date().toISOString();
 
                 saveChatData();
