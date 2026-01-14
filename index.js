@@ -143,6 +143,7 @@ import { ensureJsonCleaningRegex, removeJsonCleaningRegex } from './src/systems/
 import { parseAndStoreSpotifyUrl } from './src/systems/features/musicPlayer.js';
 import { DEFAULT_HTML_PROMPT } from './src/systems/generation/promptBuilder.js';
 import { openEncounterModal } from './src/systems/ui/encounterUI.js';
+import { openMapModal } from './src/systems/ui/mapUI.js';
 
 // Integration modules
 import {
@@ -461,6 +462,17 @@ async function initUI() {
         }
         extensionSettings.encounterSettings.autoSaveLogs = $(this).prop('checked');
         saveSettings();
+    });
+
+    // Map toggle handler
+    $('#rpg-toggle-map-button').on('change', function() {
+        if (!extensionSettings.mapSettings) {
+            extensionSettings.mapSettings = { enabled: true };
+        }
+        extensionSettings.mapSettings.enabled = $(this).prop('checked');
+        extensionSettings.enableMapButton = $(this).prop('checked');
+        saveSettings();
+        togglePlotButtons();
     });
 
     // Combat narrative style settings
@@ -995,6 +1007,7 @@ async function initUI() {
     $('#rpg-toggle-randomized-plot').prop('checked', extensionSettings.enableRandomizedPlot ?? true);
     $('#rpg-toggle-natural-plot').prop('checked', extensionSettings.enableNaturalPlot ?? true);
     $('#rpg-toggle-encounters').prop('checked', extensionSettings.encounterSettings?.enabled ?? true);
+    $('#rpg-toggle-map-button').prop('checked', extensionSettings.mapSettings?.enabled ?? true);
     $('#rpg-encounter-history-depth').val(extensionSettings.encounterSettings?.historyDepth ?? 8);
     $('#rpg-toggle-autosave-logs').prop('checked', extensionSettings.encounterSettings?.autoSaveLogs ?? true);
 
@@ -1102,7 +1115,7 @@ async function initUI() {
     initTrackerEditor();
     initPromptsEditor();
     addDiceQuickReply();
-    setupPlotButtons(sendPlotProgression, openEncounterModal);
+    setupPlotButtons(sendPlotProgression, openEncounterModal, openMapModal);
     setupMobileKeyboardHandling();
     setupContentEditableScrolling();
     initInventoryEventListeners();

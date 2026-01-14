@@ -51,8 +51,18 @@ export function togglePlotButtons() {
         $('#rpg-encounter-button').hide();
     }
 
+    // Show/hide map button based on map settings
+    if (extensionSettings.enableMapButton && extensionSettings.mapSettings?.enabled) {
+        $('#rpg-map-button').show();
+    } else {
+        $('#rpg-map-button').hide();
+    }
+
     // Show the container if at least one button is visible
-    const shouldShowContainer = extensionSettings.enableRandomizedPlot || extensionSettings.enableNaturalPlot || extensionSettings.encounterSettings?.enabled;
+    const shouldShowContainer = extensionSettings.enableRandomizedPlot || 
+        extensionSettings.enableNaturalPlot || 
+        extensionSettings.encounterSettings?.enabled ||
+        (extensionSettings.enableMapButton && extensionSettings.mapSettings?.enabled);
     if (shouldShowContainer) {
         $('#rpg-plot-buttons').show();
     } else {

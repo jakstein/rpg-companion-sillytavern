@@ -12,8 +12,9 @@ import { Generate } from '../../../../../../../script.js';
  * Sets up the plot progression buttons inside the send form area.
  * @param {Function} handlePlotClick - Callback function to handle plot button clicks
  * @param {Function} handleEncounterClick - Callback function to handle encounter button click
+ * @param {Function} handleMapClick - Callback function to handle map button click
  */
-export function setupPlotButtons(handlePlotClick, handleEncounterClick) {
+export function setupPlotButtons(handlePlotClick, handleEncounterClick, handleMapClick) {
     // Remove existing buttons if any
     $('#rpg-plot-buttons').remove();
 
@@ -61,6 +62,18 @@ export function setupPlotButtons(handlePlotClick, handleEncounterClick) {
             " tabindex="0" role="button" title="Enter combat encounter">
                 <i class="fa-solid fa-fire"></i>&nbsp;<span class="rpg-btn-text">Enter Encounter</span>
             </button>
+            <button id="rpg-map-button" class="menu_button interactable" style="
+                background-color: #7c3aed;
+                color: white;
+                border: none;
+                padding: 8px 12px;
+                border-radius: 4px;
+                font-size: 13px;
+                cursor: pointer;
+                margin: 0 2px;
+            " tabindex="0" role="button" title="Open location map">
+                <i class="fa-solid fa-map"></i>&nbsp;<span class="rpg-btn-text">Map</span>
+            </button>
         </span>
     `;
 
@@ -71,6 +84,7 @@ export function setupPlotButtons(handlePlotClick, handleEncounterClick) {
     $('#rpg-plot-random').on('click', () => handlePlotClick('random'));
     $('#rpg-plot-natural').on('click', () => handlePlotClick('natural'));
     $('#rpg-encounter-button').on('click', () => handleEncounterClick());
+    $('#rpg-map-button').on('click', () => handleMapClick && handleMapClick());
 
     // Show/hide based on setting
     togglePlotButtons();

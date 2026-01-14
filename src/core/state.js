@@ -50,6 +50,7 @@ export let extensionSettings = {
     skipInjectionsForGuided: 'none', // skip injections for instruct injections and quiet prompts (GuidedGenerations compatibility)
     enableRandomizedPlot: true, // Show randomized plot progression button above chat input
     enableNaturalPlot: true, // Show natural plot progression button above chat input
+    enableMapButton: true, // Show Map button above chat input
     // History persistence settings - inject selected tracker data into historical messages
     historyPersistence: {
         enabled: false, // Master toggle for history persistence feature
@@ -271,6 +272,20 @@ export let extensionSettings = {
         model: '',             // Model identifier (e.g., "gpt-4o-mini")
         maxTokens: 8192,       // Maximum tokens for generation
         temperature: 0.7       // Temperature setting for generation
+    },
+    // Location Map System settings
+    mapSettings: {
+        enabled: true, // Show Map button above chat input
+        // Map generation prompts (customizable)
+        customRegionalMapPrompt: '', // Custom prompt for generating regional/town maps
+        customLocationMapPrompt: '', // Custom prompt for generating building interior maps
+        customFurniturePrompt: '', // Custom prompt for generating room furniture
+        // Display settings
+        showCharacterAvatars: true, // Show character avatars on the map
+        autoTrackLocations: true, // Automatically track character locations from chat
+        // Injection settings
+        injectLocationContext: true, // Inject location context into prompts
+        locationContextDepth: 'current_only' // 'current_only', 'adjacent_rooms', 'full_building'
     },
     // Lock state for tracker items (v3 JSON format feature)
     lockedItems: {

@@ -19,6 +19,9 @@ import { migrateInventory } from '../utils/migration.js';
 import { validateStoredInventory, cleanItemString } from '../utils/security.js';
 import { migrateToV3JSON } from '../utils/jsonMigration.js';
 
+// Import map data management
+import { getMapData, setMapData } from '../systems/ui/mapUI.js';
+
 const extensionName = 'third-party/rpg-companion-sillytavern';
 
 /**
@@ -202,6 +205,7 @@ export function saveChatData() {
         quests: extensionSettings.quests,
         lastGeneratedData: lastGeneratedData,
         committedTrackerData: committedTrackerData,
+        mapData: getMapData(), // Save map data
         timestamp: Date.now()
     };
 
@@ -283,6 +287,12 @@ export function loadChatData() {
             infoBox: null,
             characterThoughts: null
         });
+        // Reset map data
+        setMapData({
+            maps: [],
+            activeMapId: null,
+            characterLocations: {}
+        });
         return;
     }
 
@@ -332,6 +342,18 @@ export function loadChatData() {
         setLastGeneratedData({ ...savedData.lastGeneratedData });
     } else {
         // console.log('[RPG Companion] ⚠️ No lastGeneratedData found in save');
+    }
+
+    // Restore map data
+    if (savedData.mapData) {
+        setMapData(savedData.mapData);
+    } else {
+        // Initialize with empty map data
+        setMapData({
+            maps: [],
+            activeMapId: null,
+            characterLocations: {}
+        });
     }
 
     // Migrate inventory in chat data if feature flag enabled
