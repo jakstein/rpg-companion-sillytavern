@@ -774,17 +774,17 @@ export class MapModal {
         try {
             const extraInstructions = this.modal.querySelector('#rpg-map-instructions').value.trim();
 
-            // Build prompt based on map type
-            let prompt;
+            // Build message array based on map type (includes character cards, world info, persona)
+            let messages;
             if (map.type === 'regional') {
-                prompt = buildRegionalMapPrompt(map.name, map.description, extraInstructions);
+                messages = await buildRegionalMapPrompt(map.name, map.description, extraInstructions);
             } else {
-                prompt = buildLocationMapPrompt(map.name, map.description, extraInstructions);
+                messages = await buildLocationMapPrompt(map.name, map.description, extraInstructions);
             }
 
-            // Generate via LLM
+            // Generate via LLM with proper context
             const response = await generateRaw({
-                prompt: prompt,
+                messages: messages,
                 quietToLoud: false
             });
 
@@ -846,10 +846,12 @@ export class MapModal {
         btn.disabled = true;
 
         try {
-            const prompt = buildFurniturePrompt(room.name, room.roomType, room.description);
+            // Build message array (includes world info for setting context)
+            const messages = await buildFurniturePrompt(room.name, room.roomType, room.description);
 
+            // Generate via LLM with proper context
             const response = await generateRaw({
-                prompt: prompt,
+                messages: messages,
                 quietToLoud: false
             });
 

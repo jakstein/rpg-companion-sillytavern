@@ -5,6 +5,8 @@
 
 import { extensionSettings, committedTrackerData, lastGeneratedData } from '../../core/state.js';
 import { getContext } from '../../../../../../extensions.js';
+import { chat, characters, this_chid, substituteParams } from '../../../../../../../script.js';
+import { selected_group, getGroupMembers, groups } from '../../../../../../group-chats.js';
 
 /**
  * Default prompt for generating regional/outdoor maps
@@ -130,97 +132,297 @@ GUIDELINES:
 Respond ONLY with the JSON object, no additional text.`;
 
 /**
- * Builds a prompt for regional map generation
+ * Gets character information from the current chat
+ * @returns {Promise<string>} Formatted character information
+ */
+async function getCharactersInfo() {
+    let characterInfo = '';
+
+    // Check if in group chat
+    if (selected_group) {
+        const group = groups.find(g => g.id === selected_group);
+        const groupMembers = getGroupMembers(selected_group);
+
+        if (groupMembers && groupMembers.length > 0) {
+            characterInfo += 'Characters in this roleplay:\n';
+
+            const disabledMembers = group?.disabled_members || [];
+            let characterIndex = 0;
+
+            groupMembers.forEach((member) => {
+                if (!member || !member.name) return;
+
+                // Skip muted characters
+                if (member.avatar && disabledMembers.includes(member.avatar)) {
+                    return;
+                }
+
+                characterIndex++;
+                characterInfo += `<character${characterIndex}="${member.name}">\n`;
+
+                if (member.description) {
+                    characterInfo += `${member.description}\n`;
+                }
+
+                if (member.personality) {
+                    characterInfo += `${member.personality}\n`;
+                }
+
+                characterInfo += `</character${characterIndex}>\n`;
+            });
+        }
+    } else if (this_chid !== undefined && characters && characters[this_chid]) {
+        // Single character chat
+        const character = characters[this_chid];
+
+        characterInfo += 'Character in this roleplay:\n\n';
+        characterInfo += `<character="${character.name}">\n`;
+
+        if (character.description) {
+            characterInfo += `${character.description}\n`;
+        }
+
+        if (character.personality) {
+            characterInfo += `${character.personality}\n`;
+        }
+
+        characterInfo += `</character>\n\n`;
+    }
+
+    return characterInfo;
+}
+
+/**
+ * Gets world info/lorebook entries for context
+ * @returns {Promise<string>} World info string
+ */
+async function getWorldInfo() {
+    const context = getContext();
+    let worldInfo = '';
+
+    try {
+        // Use SillyTavern's getWorldInfoPrompt to get activated lorebook entries
+        const getWorldInfoFn = context.getWorldInfoPrompt || window.getWorldInfoPrompt;
+        const currentChat = context.chat || chat;
+
+        if (typeof getWorldInfoFn === 'function' && currentChat && currentChat.length > 0) {
+            const chatForWI = currentChat.map(x => x.mes || x.message || x).filter(m => m && typeof m === 'string');
+            const result = await getWorldInfoFn(chatForWI, 8000, false);
+            const worldInfoString = result?.worldInfoString || result;
+
+            if (worldInfoString && typeof worldInfoString === 'string' && worldInfoString.trim()) {
+                worldInfo = worldInfoString.trim();
+            }
+        }
+    } catch (e) {
+        console.warn('[RPG Companion] Failed to get world info from getWorldInfoPrompt:', e);
+    }
+
+    // Fallback to activatedWorldInfo
+    if (!worldInfo && context.activatedWorldInfo && Array.isArray(context.activatedWorldInfo) && context.activatedWorldInfo.length > 0) {
+        context.activatedWorldInfo.forEach((entry) => {
+            if (entry && entry.content) {
+                worldInfo += `${entry.content}\n\n`;
+            }
+        });
+    }
+
+    return worldInfo;
+}
+
+/**
+ * Gets persona information
+ * @returns {string} Persona info
+ */
+function getPersonaInfo() {
+    try {
+        const personaText = substituteParams('{{persona}}');
+        if (personaText && personaText !== '{{persona}}') {
+            return personaText;
+        }
+    } catch (e) {
+        // Ignore errors
+    }
+    return '';
+}
+
+/**
+ * Builds a message array for regional map generation
  * @param {string} locationName - Name of the location
  * @param {string} description - Optional description
  * @param {string} extraInstructions - Optional extra instructions
- * @returns {string} Complete prompt
+ * @returns {Promise<Array>} Message array for API
  */
-export function buildRegionalMapPrompt(locationName, description = '', extraInstructions = '') {
-    // Get custom prompt or use default
-    let prompt = extensionSettings.mapSettings?.customRegionalMapPrompt || DEFAULT_REGIONAL_MAP_PROMPT;
-
-    // Get context for any additional info
+export async function buildRegionalMapPrompt(locationName, description = '', extraInstructions = '') {
     const context = getContext();
+    const userName = context.name1;
+    const messages = [];
+
+    // Build system message with context
+    let systemMessage = `You are an excellent location designer and game master. Your goal is to create a detailed regional map layout for the user's roleplay.\n\n`;
+
+    // Add setting/world info
+    const worldInfo = await getWorldInfo();
+    if (worldInfo) {
+        systemMessage += `Here is information about the setting:\n<setting>\n${worldInfo}\n</setting>\n\n`;
+    }
+
+    // Add character information
+    const charactersInfo = await getCharactersInfo();
+    if (charactersInfo) {
+        systemMessage += `Here is the information about the characters:\n<characters>\n${charactersInfo}</characters>\n\n`;
+    }
+
+    // Add persona information
+    const personaInfo = getPersonaInfo();
+    if (personaInfo) {
+        systemMessage += `Here are details about the protagonist ${userName}:\n<persona>\n${personaInfo}\n</persona>\n\n`;
+    }
+
+    // Add info box context if available
     const infoBox = lastGeneratedData.infoBox || committedTrackerData.infoBox;
-
-    // Replace placeholders
-    prompt = prompt.replace(/\{\{locationName\}\}/g, locationName);
-    prompt = prompt.replace(/\{\{#if description\}\}([\s\S]*?)\{\{\/if\}\}/g, description ? '$1' : '');
-    prompt = prompt.replace(/\{\{description\}\}/g, description);
-    prompt = prompt.replace(/\{\{#if extraInstructions\}\}([\s\S]*?)\{\{\/if\}\}/g, extraInstructions ? '$1' : '');
-    prompt = prompt.replace(/\{\{extraInstructions\}\}/g, extraInstructions);
-
-    // Add context from info box if available
     if (infoBox) {
-        let contextInfo = '\n\nCONTEXT FROM STORY:';
+        systemMessage += `Current story context:\n<context>\n`;
         if (infoBox.location?.value) {
-            contextInfo += `\nCurrent location in story: ${infoBox.location.value}`;
+            systemMessage += `Current location: ${infoBox.location.value}\n`;
         }
         if (infoBox.weather?.forecast) {
-            contextInfo += `\nWeather: ${infoBox.weather.forecast}`;
+            systemMessage += `Weather: ${infoBox.weather.forecast}\n`;
         }
         if (infoBox.time?.start) {
-            contextInfo += `\nTime: ${infoBox.time.start}`;
+            systemMessage += `Time: ${infoBox.time.start}\n`;
         }
-        prompt += contextInfo;
+        systemMessage += `</context>\n\n`;
     }
 
-    return prompt;
+    messages.push({
+        role: 'system',
+        content: systemMessage
+    });
+
+    // Build user message with the map generation request
+    let userPrompt = extensionSettings.mapSettings?.customRegionalMapPrompt || DEFAULT_REGIONAL_MAP_PROMPT;
+
+    // Replace placeholders
+    userPrompt = userPrompt.replace(/\{\{locationName\}\}/g, locationName);
+    userPrompt = userPrompt.replace(/\{\{#if description\}\}([\s\S]*?)\{\{\/if\}\}/g, description ? '$1' : '');
+    userPrompt = userPrompt.replace(/\{\{description\}\}/g, description);
+    userPrompt = userPrompt.replace(/\{\{#if extraInstructions\}\}([\s\S]*?)\{\{\/if\}\}/g, extraInstructions ? '$1' : '');
+    userPrompt = userPrompt.replace(/\{\{extraInstructions\}\}/g, extraInstructions);
+
+    messages.push({
+        role: 'user',
+        content: userPrompt
+    });
+
+    return messages;
 }
 
 /**
- * Builds a prompt for location/interior map generation
+ * Builds a message array for location/interior map generation
  * @param {string} locationName - Name of the location
  * @param {string} description - Optional description
  * @param {string} extraInstructions - Optional extra instructions
- * @returns {string} Complete prompt
+ * @returns {Promise<Array>} Message array for API
  */
-export function buildLocationMapPrompt(locationName, description = '', extraInstructions = '') {
-    // Get custom prompt or use default
-    let prompt = extensionSettings.mapSettings?.customLocationMapPrompt || DEFAULT_LOCATION_MAP_PROMPT;
-
-    // Get context for any additional info
+export async function buildLocationMapPrompt(locationName, description = '', extraInstructions = '') {
     const context = getContext();
-    const infoBox = lastGeneratedData.infoBox || committedTrackerData.infoBox;
+    const userName = context.name1;
+    const messages = [];
 
-    // Replace placeholders
-    prompt = prompt.replace(/\{\{locationName\}\}/g, locationName);
-    prompt = prompt.replace(/\{\{#if description\}\}([\s\S]*?)\{\{\/if\}\}/g, description ? '$1' : '');
-    prompt = prompt.replace(/\{\{description\}\}/g, description);
-    prompt = prompt.replace(/\{\{#if extraInstructions\}\}([\s\S]*?)\{\{\/if\}\}/g, extraInstructions ? '$1' : '');
-    prompt = prompt.replace(/\{\{extraInstructions\}\}/g, extraInstructions);
+    // Build system message with context
+    let systemMessage = `You are an excellent location designer and game master. Your goal is to create a detailed interior layout for the user's roleplay.\n\n`;
 
-    // Add context from info box if available
-    if (infoBox) {
-        let contextInfo = '\n\nCONTEXT FROM STORY:';
-        if (infoBox.location?.value) {
-            contextInfo += `\nCurrent location in story: ${infoBox.location.value}`;
-        }
-        prompt += contextInfo;
+    // Add setting/world info
+    const worldInfo = await getWorldInfo();
+    if (worldInfo) {
+        systemMessage += `Here is information about the setting:\n<setting>\n${worldInfo}\n</setting>\n\n`;
     }
 
-    return prompt;
+    // Add character information
+    const charactersInfo = await getCharactersInfo();
+    if (charactersInfo) {
+        systemMessage += `Here is the information about the characters:\n<characters>\n${charactersInfo}</characters>\n\n`;
+    }
+
+    // Add persona information
+    const personaInfo = getPersonaInfo();
+    if (personaInfo) {
+        systemMessage += `Here are details about the protagonist ${userName}:\n<persona>\n${personaInfo}\n</persona>\n\n`;
+    }
+
+    // Add info box context if available
+    const infoBox = lastGeneratedData.infoBox || committedTrackerData.infoBox;
+    if (infoBox) {
+        systemMessage += `Current story context:\n<context>\n`;
+        if (infoBox.location?.value) {
+            systemMessage += `Current location: ${infoBox.location.value}\n`;
+        }
+        systemMessage += `</context>\n\n`;
+    }
+
+    messages.push({
+        role: 'system',
+        content: systemMessage
+    });
+
+    // Build user message with the map generation request
+    let userPrompt = extensionSettings.mapSettings?.customLocationMapPrompt || DEFAULT_LOCATION_MAP_PROMPT;
+
+    // Replace placeholders
+    userPrompt = userPrompt.replace(/\{\{locationName\}\}/g, locationName);
+    userPrompt = userPrompt.replace(/\{\{#if description\}\}([\s\S]*?)\{\{\/if\}\}/g, description ? '$1' : '');
+    userPrompt = userPrompt.replace(/\{\{description\}\}/g, description);
+    userPrompt = userPrompt.replace(/\{\{#if extraInstructions\}\}([\s\S]*?)\{\{\/if\}\}/g, extraInstructions ? '$1' : '');
+    userPrompt = userPrompt.replace(/\{\{extraInstructions\}\}/g, extraInstructions);
+
+    messages.push({
+        role: 'user',
+        content: userPrompt
+    });
+
+    return messages;
 }
 
 /**
- * Builds a prompt for furniture generation
+ * Builds a message array for furniture generation
  * @param {string} roomName - Name of the room
  * @param {string} roomType - Type of room
  * @param {string} description - Optional current description
- * @returns {string} Complete prompt
+ * @returns {Promise<Array>} Message array for API
  */
-export function buildFurniturePrompt(roomName, roomType = 'default', description = '') {
-    // Get custom prompt or use default
-    let prompt = extensionSettings.mapSettings?.customFurniturePrompt || DEFAULT_FURNITURE_PROMPT;
+export async function buildFurniturePrompt(roomName, roomType = 'default', description = '') {
+    const messages = [];
+
+    // Build system message with minimal context
+    let systemMessage = `You are a location designer. Generate appropriate furniture and objects for a room in the user's roleplay.\n\n`;
+
+    // Add setting/world info for era/style context
+    const worldInfo = await getWorldInfo();
+    if (worldInfo) {
+        systemMessage += `Here is information about the setting (use this to determine appropriate furniture style/era):\n<setting>\n${worldInfo}\n</setting>\n\n`;
+    }
+
+    messages.push({
+        role: 'system',
+        content: systemMessage
+    });
+
+    // Build user message
+    let userPrompt = extensionSettings.mapSettings?.customFurniturePrompt || DEFAULT_FURNITURE_PROMPT;
 
     // Replace placeholders
-    prompt = prompt.replace(/\{\{roomName\}\}/g, roomName);
-    prompt = prompt.replace(/\{\{roomType\}\}/g, roomType);
-    prompt = prompt.replace(/\{\{#if description\}\}([\s\S]*?)\{\{\/if\}\}/g, description ? '$1' : '');
-    prompt = prompt.replace(/\{\{description\}\}/g, description);
+    userPrompt = userPrompt.replace(/\{\{roomName\}\}/g, roomName);
+    userPrompt = userPrompt.replace(/\{\{roomType\}\}/g, roomType);
+    userPrompt = userPrompt.replace(/\{\{#if description\}\}([\s\S]*?)\{\{\/if\}\}/g, description ? '$1' : '');
+    userPrompt = userPrompt.replace(/\{\{description\}\}/g, description);
 
-    return prompt;
+    messages.push({
+        role: 'user',
+        content: userPrompt
+    });
+
+    return messages;
 }
 
 /**
