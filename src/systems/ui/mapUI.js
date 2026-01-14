@@ -784,7 +784,7 @@ export class MapModal {
 
             // Generate via LLM with proper context
             const response = await generateRaw({
-                messages: messages,
+                prompt: messages,
                 quietToLoud: false
             });
 
@@ -851,7 +851,7 @@ export class MapModal {
 
             // Generate via LLM with proper context
             const response = await generateRaw({
-                messages: messages,
+                prompt: messages,
                 quietToLoud: false
             });
 
